@@ -106,6 +106,14 @@ class APITestCase(unittest.TestCase):
             response.get_json(), {"status": "error", "database": "unavailable"}
         )
 
+    @patch("app._database_query", return_value=[])
+    def test_supplier_performance_report_uses_database_view(self, database_query):
+        response = self.client.get("/api/reports/supplier-performance")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"data": []})
+        self.assertIn("v_supplier_performance", database_query.call_args.args[0])
+
     @patch("app.get_connection")
     def test_create_supplier_rejects_missing_required_fields(self, get_connection):
         response = self.client.post(

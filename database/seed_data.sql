@@ -1,5 +1,22 @@
 USE supply_chain_risk_management;
 
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE risks;
+TRUNCATE TABLE inventory_transactions;
+TRUNCATE TABLE quality_inspections;
+TRUNCATE TABLE delivery_items;
+TRUNCATE TABLE deliveries;
+TRUNCATE TABLE shipments;
+TRUNCATE TABLE purchase_order_items;
+TRUNCATE TABLE purchase_orders;
+TRUNCATE TABLE inventory;
+TRUNCATE TABLE materials;
+TRUNCATE TABLE warehouses;
+TRUNCATE TABLE suppliers;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
 INSERT INTO suppliers (
     supplier_id, supplier_code, supplier_name, contact_name, email, phone,
     address, lead_time_days

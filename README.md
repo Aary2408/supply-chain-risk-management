@@ -1,6 +1,29 @@
 # Supply Chain Risk & Inventory Management System
 
-A college DBMS course project for tracking suppliers, materials, inventory, purchase orders, deliveries, quality inspections, and supply risks.
+A Flask and MySQL DBMS project for managing supplier relationships, material inventory, procurement, receiving, quality inspection, and supply-chain risk reporting.
+
+## Objectives
+
+- Maintain normalized supplier, material, warehouse, procurement, and inventory records.
+- Track deliveries against purchase-order lines and validate inspected quantities.
+- Atomically add only accepted quantities to inventory and retain an inventory transaction audit trail.
+- Surface reorder, supplier-performance, and overdue-order reports from database records.
+
+## Features
+
+- CRUD APIs and management screens for suppliers, materials, warehouses, and inventory.
+- Purchase-order, shipment, delivery, and quality-inspection workflows.
+- Idempotent database procedure for delivery processing and purchase-order status updates.
+- Database-backed dashboard, low-stock, supplier-performance, and overdue-order reports.
+- Responsive vintage cream / dark retro-terminal UI with filtering and workflow forms.
+- Parameterized SQL, payload validation, foreign-key constraints, and transactional writes.
+
+## Technology stack
+
+- Python 3.10+, Flask, and `mysql-connector-python`
+- MySQL 8.0.16+ (InnoDB; enforced `CHECK` constraints)
+- Server-rendered Jinja templates, vanilla JavaScript, and CSS
+- `unittest` for automated API tests
 
 ## Project structure
 
@@ -22,17 +45,6 @@ A college DBMS course project for tracking suppliers, materials, inventory, purc
 └── README.md
 ```
 
-The project includes a MySQL schema and seed data, a Flask JSON API, a responsive browser-based operations console, and automated API and homepage tests.
-
-## Implementation plan
-
-1. **Database foundation (this milestone):** Create normalized MySQL tables with primary/foreign keys, unique and check constraints, useful indexes, reporting views, validation triggers, and an atomic delivery-receiving procedure. Add realistic sample records.
-2. **Flask foundation (Phase 2):** Provide environment-based database access, validation, CRUD APIs for suppliers, materials, warehouses, and inventory, plus health and reporting endpoints.
-3. **Core management screens:** Implement suppliers, materials, warehouses, purchase orders, and multi-item order entry with server-side validation.
-4. **Inventory and receiving:** Add inventory/reorder screens and shipment/delivery workflows. Process a receipt in a database transaction; only inspected accepted quantities increase available stock, and a delivery cannot be processed twice.
-5. **Risk, dashboard, and reports:** Use the reporting views and SQL queries for supplier delay/quality analysis, inventory alerts, dashboard summaries, and reports.
-6. **Verification and handoff:** Add focused tests for constraints, parameterized queries, receipt rollback/idempotency, inventory changes, and report results; document application setup and screenshots/use cases.
-
 ## Database setup (MySQL 8.0.16+)
 
 The schema uses MySQL `CHECK` constraints, which are enforced starting with MySQL 8.0.16. The scripts create and select the `supply_chain_risk_management` database.
@@ -51,7 +63,7 @@ Start MySQL 8 and wait for its health check:
 docker compose up -d --wait mysql
 ```
 
-Import the schema first, then the demonstration data. The seed script is intended to be imported once into a fresh schema:
+Import the schema first, then the demonstration data. The seed script resets the demo tables before repopulating them, so it can be safely re-run against an existing schema:
 
 ```bash
 docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"' < database/schema.sql
@@ -74,7 +86,7 @@ SELECT * FROM v_supplier_performance
 
 The database is also available from the Codespace at `127.0.0.1:3306`. The schema script creates and selects `supply_chain_risk_management`; the SQL files do not need to be edited.
 
-## Phase 2: Flask API
+## Start the Flask application
 
 The API connects to the existing `supply_chain_risk_management` database. It does not create or alter database tables or views. Install Python 3.10 or newer and the project dependencies:
 

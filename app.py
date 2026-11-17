@@ -394,56 +394,7 @@ def create_app():
     @app.get("/api/reports/supplier-performance")
     def supplier_performance():
         rows = _database_query(
-            """
-            SELECT s.supplier_id, s.supplier_code, s.supplier_name,
-                   COALESCE(ds.delivery_count, 0) AS delivery_count,
-                   COALESCE(ds.delayed_deliveries, 0) AS delayed_deliveries,
-                   ds.average_delay_days,
-                   COALESCE(qs.inspected_quantity, 0) AS inspected_quantity,
-                   COALESCE(qs.rejected_quantity, 0) AS rejected_quantity,
-                   qs.rejection_rate_percent
-            FROM suppliers AS s
-            LEFT JOIN (
-                SELECT po.supplier_id,
-                       COUNT(*) AS delivery_count,
-                       SUM(CASE
-                           WHEN sh.estimated_delivery_at IS NOT NULL
-                            AND d.received_at > sh.estimated_delivery_at
-                           THEN 1 ELSE 0
-                       END) AS delayed_deliveries,
-                       AVG(CASE
-                           WHEN sh.estimated_delivery_at IS NOT NULL
-                           THEN GREATEST(
-                               TIMESTAMPDIFF(
-                                   SECOND, sh.estimated_delivery_at, d.received_at
-                               ) / 86400.0,
-                               0
-                           )
-                       END) AS average_delay_days
-                FROM deliveries AS d
-                JOIN shipments AS sh ON sh.shipment_id = d.shipment_id
-                JOIN purchase_orders AS po
-                    ON po.purchase_order_id = sh.purchase_order_id
-                GROUP BY po.supplier_id
-            ) AS ds ON ds.supplier_id = s.supplier_id
-            LEFT JOIN (
-                SELECT po.supplier_id,
-                       SUM(qi.accepted_qty + qi.rejected_qty) AS inspected_quantity,
-                       SUM(qi.rejected_qty) AS rejected_quantity,
-                       100.0 * SUM(qi.rejected_qty)
-                           / NULLIF(SUM(qi.accepted_qty + qi.rejected_qty), 0)
-                           AS rejection_rate_percent
-                FROM quality_inspections AS qi
-                JOIN delivery_items AS di
-                    ON di.delivery_item_id = qi.delivery_item_id
-                JOIN deliveries AS d ON d.delivery_id = di.delivery_id
-                JOIN shipments AS sh ON sh.shipment_id = d.shipment_id
-                JOIN purchase_orders AS po
-                    ON po.purchase_order_id = sh.purchase_order_id
-                GROUP BY po.supplier_id
-            ) AS qs ON qs.supplier_id = s.supplier_id
-            ORDER BY s.supplier_id
-            """
+            "SELECT * FROM v_supplier_performance ORDER BY supplier_id"
         )
         return jsonify(data=rows)
 

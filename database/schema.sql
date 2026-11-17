@@ -239,13 +239,23 @@ LEFT JOIN (
     SELECT
         po.supplier_id,
         COUNT(*) AS delivery_count,
-        SUM(d.received_at > sh.estimated_delivery_at) AS delayed_deliveries,
-        AVG(GREATEST(DATEDIFF(d.received_at, sh.estimated_delivery_at), 0))
-            AS average_delay_days
+        SUM(CASE
+            WHEN sh.estimated_delivery_at IS NOT NULL
+             AND d.received_at > sh.estimated_delivery_at
+            THEN 1 ELSE 0
+        END) AS delayed_deliveries,
+        AVG(CASE
+            WHEN sh.estimated_delivery_at IS NOT NULL
+            THEN GREATEST(
+                TIMESTAMPDIFF(
+                    SECOND, sh.estimated_delivery_at, d.received_at
+                ) / 86400.0,
+                0
+            )
+        END) AS average_delay_days
     FROM deliveries AS d
     JOIN shipments AS sh ON sh.shipment_id = d.shipment_id
     JOIN purchase_orders AS po ON po.purchase_order_id = sh.purchase_order_id
-    WHERE sh.estimated_delivery_at IS NOT NULL
     GROUP BY po.supplier_id
 ) AS delivery_stats ON delivery_stats.supplier_id = s.supplier_id
 LEFT JOIN (
