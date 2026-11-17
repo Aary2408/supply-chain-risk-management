@@ -499,6 +499,7 @@ async function initManagementPage(root, page, config) {
     const selects = [...fieldsHolder.querySelectorAll("select[data-source]")];
     for (const select of selects) {
       const field = config.form.fields.find((item) => item.name === select.name);
+      if (!field?.source) continue;
       if (field?.source === "/api/shipments") {
         try {
           lookup.shipments = await getData(field.source);
