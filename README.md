@@ -11,11 +11,11 @@ A Flask and MySQL DBMS project for managing supplier relationships, material inv
 
 ## Features
 
-- CRUD APIs and management screens for suppliers, materials, warehouses, and inventory.
+- CRUD APIs and management screens for suppliers, materials, and warehouses; inventory balances are read-only in the UI.
 - Purchase-order, shipment, delivery, and quality-inspection workflows.
 - Idempotent database procedure for delivery processing and purchase-order status updates.
-- Database-backed dashboard, low-stock, supplier-performance, and overdue-order reports.
-- Responsive vintage cream / dark retro-terminal UI with filtering and workflow forms.
+- Database-backed dashboard, low-stock, supplier-performance, overdue-order, and inventory-transaction reports.
+- Responsive industrial ERP interface with filtering, workflow forms, and accessible navigation.
 - Parameterized SQL, payload validation, foreign-key constraints, and transactional writes.
 
 ## Technology stack
@@ -36,8 +36,10 @@ A Flask and MySQL DBMS project for managing supplier relationships, material inv
 │   └── seed_data.sql         # Demonstration records
 ├── templates/                # Dashboard and management page templates
 ├── static/
-│   ├── css/app.css           # Vintage terminal theme and responsive layouts
-│   └── js/app.js             # API-connected dashboard and page interactions
+│   ├── css/app.css           # Industrial design system and responsive layouts
+│   └── js/
+│       ├── api.js            # Shared API request and error handling
+│       └── app.js            # Dashboard and page interactions
 ├── tests/                    # Database and Flask tests
 ├── .env.example              # Safe placeholders only; no real credentials
 ├── .gitignore
@@ -106,7 +108,7 @@ set +a
 flask --app app run --debug --host=0.0.0.0 --port=5000
 ```
 
-Open `http://127.0.0.1:5000/dashboard` (or the forwarded port in Codespaces) for the dashboard. The `/dashboard` route always serves the browser UI; the root route also serves it to HTML clients and continues to return its JSON status document to clients that request JSON or do not explicitly prefer HTML. The console provides inventory, suppliers, materials, warehouses, purchase orders, shipments, deliveries, quality inspections, and risk-report pages. It reads and writes through the existing `/api/...` endpoints; dashboard totals, reorder charts, and reports are derived from API responses, not seeded in the browser.
+Open `http://127.0.0.1:5000/dashboard` (or the forwarded port in Codespaces) for the dashboard. The `/dashboard` route always serves the browser UI; the root route also serves it to HTML clients and continues to return its JSON status document to clients that request JSON or do not explicitly prefer HTML. The console provides inventory, suppliers, materials, warehouses, purchase orders, shipments, deliveries, quality inspections, and report pages. It reads and writes through the `/api/...` endpoints; dashboard totals, reorder charts, and reports are derived from API responses, not seeded in the browser. The UI does not directly adjust inventory: accepted receipts are applied by the database receiving procedure. The `risks` table has no implemented API operations, so the interface does not present an unsupported risk-management workflow or inferred risk scores.
 
 The connection module reads `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD`. If `DB_USER` or `DB_PASSWORD` is unset, the corresponding `MYSQL_USER` or `MYSQL_PASSWORD` from the Compose `.env` file is used. Database name defaults to `supply_chain_risk_management`; host and port default to `127.0.0.1` and `3306`. Do not commit `.env` or put real credentials in source code.
 
@@ -129,6 +131,7 @@ Available routes:
 | GET, PUT, PATCH, DELETE | `/api/warehouses/<warehouse_id>` | Retrieve, update, or delete a warehouse |
 | GET, POST | `/api/inventory` | List or create inventory records |
 | GET, PUT, PATCH, DELETE | `/api/inventory/<material_id>/<warehouse_id>` | Retrieve, update, or delete an inventory record |
+| GET | `/api/inventory/transactions` | List the latest inventory transaction records with material and warehouse details |
 | GET, POST | `/api/purchase-orders` | List or create orders with material line items |
 | GET | `/api/purchase-orders/<purchase_order_id>` | Retrieve an order and received line quantities |
 | GET, POST | `/api/shipments` | List or create shipments linked to purchase orders |
@@ -136,6 +139,7 @@ Available routes:
 | GET, POST | `/api/deliveries` | List or record partial/complete deliveries |
 | GET | `/api/deliveries/<delivery_id>` | Retrieve a delivery and its inspection results |
 | GET, POST | `/api/deliveries/<delivery_id>/inspections` | List or record quality inspections |
+| GET | `/api/inspections` | List quality inspections with delivery and material details |
 | POST | `/api/deliveries/<delivery_id>/process` | Process inspected receipt quantities into inventory |
 | GET | `/api/inventory/low-stock` | Query `v_inventory_reorder_status` |
 | GET | `/api/reports/supplier-performance` | Query supplier delivery and quality metrics |

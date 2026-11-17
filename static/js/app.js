@@ -6,12 +6,7 @@ const formatNumber = (value) => {
 };
 
 async function getData(url) {
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(body?.error?.message || `Request failed (${response.status})`);
-  }
-  return body.data ?? body;
+  return window.Api.get(url);
 }
 
 function showError(element, error) {
@@ -32,9 +27,9 @@ function setMetric(name, value, failed = false) {
 }
 
 function statusClass(value) {
-  if (["received", "processed", "active"].includes(String(value).toLowerCase())) return "good";
-  if (["cancelled", "overdue"].includes(String(value).toLowerCase())) return "danger";
-  if (["submitted", "partially_received", "draft"].includes(String(value).toLowerCase())) return "warn";
+  if (["received", "processed", "active", "receipt", "in stock"].includes(String(value).toLowerCase())) return "good";
+  if (["cancelled", "overdue", "issue"].includes(String(value).toLowerCase())) return "danger";
+  if (["submitted", "partially_received", "draft", "adjustment", "reorder"].includes(String(value).toLowerCase())) return "warn";
   return "";
 }
 
@@ -75,23 +70,39 @@ function renderSupplierSignals(container, rows) {
   }
   container.innerHTML = rows.slice(0, 5).map((supplier) => {
     const delays = Number(supplier.delayed_deliveries) || 0;
-    const rejection = Number(supplier.rejection_rate_percent) || 0;
-    const signaled = delays > 0 || rejection > 0;
-    return `<div class="signal-row"><span class="signal-name">${escapeHtml(supplier.supplier_name || supplier.supplier_code || "Supplier")}</span><span class="signal-stat ${delays ? "alert" : ""}">${formatNumber(delays)} delayed</span><span class="signal-stat ${rejection > 0 ? "alert" : ""}">${rejection.toFixed(1)}% rejected${signaled ? " · !" : ""}</span></div>`;
+    const rejection = supplier.rejection_rate_percent == null ? null : Number(supplier.rejection_rate_percent);
+    const signaled = delays > 0 || (rejection !== null && rejection > 0);
+    const rejectionText = rejection === null ? "—" : `${rejection.toFixed(1)}% rejected`;
+    return `<div class="signal-row"><span class="signal-name">${escapeHtml(supplier.supplier_name || supplier.supplier_code || "Supplier")}</span><span class="signal-stat ${delays ? "alert" : ""}">${formatNumber(delays)} delayed</span><span class="signal-stat ${rejection > 0 ? "alert" : ""}">${rejectionText}${signaled ? " · !" : ""}</span></div>`;
   }).join("");
+}
+
+function renderRecentTransactions(container, rows) {
+  renderTable(container, rows.slice(0, 5), [
+    { key: "material_name", label: "MATERIAL" },
+    { key: "warehouse_code", label: "LOCATION", mono: true },
+    { key: "quantity_delta", label: "CHANGE" },
+    { key: "transaction_type", label: "TYPE", status: true },
+  ], "No inventory transactions");
 }
 
 function updateClock() {
   const target = document.querySelector("[data-clock]");
-  if (target) target.textContent = `${new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date())} UTC`;
+  if (target) target.textContent = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(new Date());
 }
 
 async function loadDashboard() {
   const lowStockChart = document.querySelector("[data-reorder-chart]");
   const supplierSignals = document.querySelector("[data-supplier-signals]");
   const recentOrders = document.querySelector("[data-recent-orders]");
+  const recentTransactions = document.querySelector("[data-recent-transactions]");
 
   const requests = [
+    ["suppliers", "/api/suppliers", (rows) => setMetric("suppliers", rows.length)],
+    ["materials", "/api/materials", (rows) => setMetric("materials", rows.length)],
+    ["warehouses", "/api/warehouses", (rows) => setMetric("warehouses", rows.length)],
     ["inventory", "/api/inventory", (rows) => setMetric("inventory", rows.length)],
     ["low-stock", "/api/inventory/low-stock", (rows) => {
       setMetric("low-stock", rows.length);
@@ -107,18 +118,23 @@ async function loadDashboard() {
         { key: "status", label: "STATUS", status: true },
       ], "No purchase orders");
     }],
+    ["pending-deliveries", "/api/deliveries", (rows) => {
+      setMetric("pending-deliveries", rows.filter((row) => !row.receipt_processed_at).length);
+    }],
     ["overdue", "/api/reports/overdue-purchase-orders", (rows) => setMetric("overdue", rows.length)],
     ["supplier-signals", "/api/reports/supplier-performance", (rows) => renderSupplierSignals(supplierSignals, rows)],
+    ["transactions", "/api/inventory/transactions", (rows) => renderRecentTransactions(recentTransactions, rows)],
   ];
   const results = await Promise.allSettled(requests.map(([, url]) => getData(url)));
   results.forEach((result, index) => {
     const [name, , render] = requests[index];
     if (result.status === "fulfilled") render(result.value);
     else {
-      if (["inventory", "low-stock", "purchase-orders", "overdue"].includes(name)) setMetric(name, null, true);
+      if (["suppliers", "materials", "warehouses", "inventory", "low-stock", "purchase-orders", "pending-deliveries", "overdue"].includes(name)) setMetric(name, null, true);
       if (name === "low-stock") showError(lowStockChart, result.reason);
       if (name === "purchase-orders") showError(recentOrders, result.reason);
       if (name === "supplier-signals") showError(supplierSignals, result.reason);
+      if (name === "transactions") showError(recentTransactions, result.reason);
     }
   });
   const updated = document.querySelector("[data-last-updated]");
@@ -132,37 +148,43 @@ function initNavigation() {
   button.addEventListener("click", () => {
     const open = sidebar.classList.toggle("is-open");
     button.setAttribute("aria-expanded", String(open));
+    button.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
   });
   document.addEventListener("click", (event) => {
     if (!sidebar.contains(event.target) && !button.contains(event.target)) {
       sidebar.classList.remove("is-open");
       button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-label", "Open navigation");
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && sidebar.classList.contains("is-open")) {
+      sidebar.classList.remove("is-open");
+      button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-label", "Open navigation");
+      button.focus();
     }
   });
 }
 
 const PAGE_CONFIG = {
   inventory: {
-    title: "Inventory", intro: "Balances by material and warehouse, with reorder thresholds from the live register.",
-    endpoint: "/api/inventory", columns: [
-      ["material_id", "MATERIAL ID", true], ["warehouse_id", "WAREHOUSE ID", true], ["quantity_on_hand", "ON HAND"],
+    title: "Inventory", intro: "Live stock balances and reorder thresholds. Stock is updated only by the inspected receiving workflow.",
+    endpoint: "/api/inventory", readOnly: true, columns: [
+      ["sku", "SKU", true], ["material_name", "MATERIAL"], ["warehouse_code", "WAREHOUSE", true],
+      ["quantity_on_hand", "ON HAND"], ["reorder_level", "REORDER AT"], ["stock_status", "STOCK STATUS", false, "status"],
       ["updated_at", "LAST UPDATED", true],
     ],
-    form: { title: "Record inventory", fields: [
-      { name: "material_id", label: "MATERIAL", type: "select", source: "/api/materials", value: "material_id", text: (row) => `${row.sku} · ${row.material_name}`, required: true },
-      { name: "warehouse_id", label: "WAREHOUSE", type: "select", source: "/api/warehouses", value: "warehouse_id", text: (row) => `${row.warehouse_code} · ${row.warehouse_name}`, required: true },
-      { name: "quantity_on_hand", label: "QUANTITY ON HAND", type: "number", required: true },
-    ] }, editable: ["quantity_on_hand"], keys: (row) => `${row.material_id}/${row.warehouse_id}`,
-    extra: { title: "Reorder watch", endpoint: "/api/inventory/low-stock", columns: [["sku", "SKU", true], ["material_name", "MATERIAL"], ["warehouse_code", "WAREHOUSE", true], ["quantity_on_hand", "ON HAND"], ["reorder_level", "REORDER AT"], ["safety_stock", "SAFETY STOCK"]] },
+    extra: { title: "Inventory transaction history", endpoint: "/api/inventory/transactions", columns: [["occurred_at", "DATE", true], ["sku", "SKU", true], ["material_name", "MATERIAL"], ["warehouse_code", "WAREHOUSE", true], ["transaction_type", "TYPE", false, "status"], ["quantity_delta", "CHANGE"], ["delivery_number", "DELIVERY", true]] },
   },
   suppliers: {
     title: "Suppliers", intro: "Supplier directory and lead-time information connected to procurement records.",
     endpoint: "/api/suppliers", columns: [["supplier_code", "CODE", true], ["supplier_name", "SUPPLIER"], ["contact_name", "CONTACT"], ["email", "EMAIL"], ["lead_time_days", "LEAD TIME"], ["is_active", "ACTIVE", false, "boolean"]],
     form: { title: "Add supplier", fields: [
       { name: "supplier_code", label: "SUPPLIER CODE", required: true }, { name: "supplier_name", label: "SUPPLIER NAME", required: true },
-      { name: "contact_name", label: "CONTACT NAME" }, { name: "email", label: "EMAIL", type: "email" },
-      { name: "phone", label: "PHONE" }, { name: "lead_time_days", label: "LEAD TIME (DAYS)", type: "number", value: "0" },
-      { name: "is_active", label: "ACTIVE SUPPLIER", type: "checkbox" }, { name: "address", label: "ADDRESS", type: "textarea", full: true },
+      { name: "contact_name", label: "CONTACT NAME", nullable: true }, { name: "email", label: "EMAIL", type: "email", nullable: true },
+      { name: "phone", label: "PHONE", nullable: true }, { name: "lead_time_days", label: "LEAD TIME (DAYS)", type: "number", value: "0" },
+      { name: "is_active", label: "ACTIVE SUPPLIER", type: "checkbox" }, { name: "address", label: "ADDRESS", type: "textarea", full: true, nullable: true },
     ] }, editable: ["supplier_name", "contact_name", "email", "phone", "address", "lead_time_days", "is_active"], keys: (row) => row.supplier_id,
   },
   materials: {
@@ -170,7 +192,7 @@ const PAGE_CONFIG = {
     endpoint: "/api/materials", columns: [["sku", "SKU", true], ["material_name", "MATERIAL"], ["category", "CATEGORY"], ["unit_of_measure", "UNIT"], ["reorder_level", "REORDER AT"], ["safety_stock", "SAFETY STOCK"]],
     form: { title: "Add material", fields: [
       { name: "sku", label: "SKU", required: true }, { name: "material_name", label: "MATERIAL NAME", required: true },
-      { name: "category", label: "CATEGORY" }, { name: "unit_of_measure", label: "UNIT OF MEASURE", required: true },
+      { name: "category", label: "CATEGORY", nullable: true }, { name: "unit_of_measure", label: "UNIT OF MEASURE", required: true },
       { name: "reorder_level", label: "REORDER LEVEL", type: "number", value: "0" }, { name: "safety_stock", label: "SAFETY STOCK", type: "number", value: "0" },
       { name: "is_active", label: "ACTIVE MATERIAL", type: "checkbox" },
     ] }, editable: ["material_name", "category", "unit_of_measure", "reorder_level", "safety_stock", "is_active"], keys: (row) => row.material_id,
@@ -198,7 +220,7 @@ const PAGE_CONFIG = {
     form: { title: "Register shipment", fields: [
       { name: "shipment_number", label: "SHIPMENT NUMBER", required: true }, { name: "purchase_order_id", label: "PURCHASE ORDER", type: "select", source: "/api/purchase-orders", value: "purchase_order_id", text: (row) => `${row.po_number} · ${row.supplier_name}`, required: true },
       { name: "warehouse_id", label: "RECEIVING WAREHOUSE", type: "select", source: "/api/warehouses", value: "warehouse_id", text: (row) => `${row.warehouse_code} · ${row.warehouse_name}`, required: true },
-      { name: "tracking_number", label: "TRACKING NUMBER" }, { name: "carrier", label: "CARRIER" },
+      { name: "tracking_number", label: "TRACKING NUMBER", nullable: true }, { name: "carrier", label: "CARRIER", nullable: true },
       { name: "shipped_at", label: "SHIPPED AT", type: "datetime-local" }, { name: "estimated_delivery_at", label: "ESTIMATED ARRIVAL", type: "datetime-local" },
     ] }, details: (row) => `/api/shipments/${row.shipment_id}`,
   },
@@ -222,7 +244,7 @@ const PAGE_CONFIG = {
     ] },
   },
   "risk-reports": {
-    title: "Risk reports", intro: "Supplier delay, inspection-quality and outstanding overdue-order signals from live reports.",
+    title: "Reports & analytics", intro: "Operational reports based on supplier performance, stock thresholds, receiving transactions and overdue purchase orders.",
     reports: true,
   },
 };
@@ -249,7 +271,10 @@ function renderForm(container, form) {
     </div>`).join("");
   if (form.lines) {
     const heading = form.lines === "order" ? "PURCHASE ORDER LINES" : "RECEIVED LINES";
-    container.insertAdjacentHTML("beforeend", `<div class="line-builder" data-line-builder data-line-type="${form.lines}"><div class="line-builder-heading"><span>${heading}</span><button class="line-add" type="button" data-add-line>+ ADD LINE</button></div><div data-line-items></div></div>`);
+    const labels = form.lines === "order"
+      ? "<span>Material</span><span>Quantity</span><span>Unit cost</span><span></span>"
+      : "<span>Purchase order line</span><span>Quantity received</span><span></span>";
+    container.insertAdjacentHTML("beforeend", `<div class="line-builder" data-line-builder data-line-type="${form.lines}"><div class="line-builder-heading"><span>${heading}</span><button class="line-add" type="button" data-add-line>+ Add line</button></div><div class="line-item-labels">${labels}</div><div data-line-items></div></div>`);
   }
 }
 
@@ -259,15 +284,20 @@ function fieldValue(form, name) {
 
 function inputElement(name, type, required = false) {
   const minimum = type === "number" ? (name === "line_cost" ? 0 : 1) : "";
-  return `<input name="${escapeHtml(name)}" type="${type}" ${type === "number" ? `min="${minimum}" step="${name === "line_cost" ? "0.01" : "1"}"` : ""} ${required ? "required" : ""}>`;
+  const labels = {
+    line_material: "Material",
+    line_item: "Purchase order line",
+    line_quantity: "Quantity",
+    line_cost: "Unit cost",
+  };
+  return `<input name="${escapeHtml(name)}" aria-label="${labels[name]}" type="${type}" ${type === "number" ? `min="${minimum}" step="${name === "line_cost" ? "0.01" : "1"}"` : ""} ${required ? "required" : ""}>`;
 }
 
 function addLine(container, lineType, materials = []) {
   const holder = container.querySelector("[data-line-items]");
-  const index = holder.children.length;
   const select = lineType === "order"
-    ? `<select name="line_material" required><option value="">Choose material…</option>${materials.map((row) => `<option value="${escapeHtml(row.material_id)}">${escapeHtml(row.sku)} · ${escapeHtml(row.material_name)}</option>`).join("")}</select>`
-    : '<select name="line_item" required disabled><option value="">Choose shipment first…</option></select>';
+    ? `<select name="line_material" aria-label="Material" required><option value="">Choose material…</option>${materials.map((row) => `<option value="${escapeHtml(row.material_id)}">${escapeHtml(row.sku)} · ${escapeHtml(row.material_name)}</option>`).join("")}</select>`
+    : '<select name="line_item" aria-label="Purchase order line" required disabled><option value="">Choose shipment first…</option></select>';
   const inputs = lineType === "order"
     ? `${inputElement("line_quantity", "number", true)}${inputElement("line_cost", "number", true)}`
     : `${inputElement("line_quantity", "number", true)}`;
@@ -299,6 +329,21 @@ function registerFilter(container, filter) {
       row.hidden = !row.dataset.rowSearch.toLowerCase().includes(term);
     });
   };
+}
+
+function renderRecordDetail(record) {
+  const fields = Object.entries(record).filter(([, value]) => !Array.isArray(value));
+  const summary = fields.map(([key, value]) => `<div><dt>${escapeHtml(key.replaceAll("_", " "))}</dt><dd>${value == null || value === "" ? "—" : escapeHtml(value)}</dd></div>`).join("");
+  const items = Array.isArray(record.items)
+    ? `<div class="detail-items"><h3>Line items</h3>${tableMarkup(record.items, [
+      ["sku", "SKU", true],
+      ["material_name", "MATERIAL"],
+      ["quantity_ordered", "ORDERED"],
+      ["quantity_received", "RECEIVED"],
+      ["unit_cost", "UNIT COST"],
+    ])}</div>`
+    : "";
+  return `<div class="record-detail"><dl>${summary}</dl>${items}</div>`;
 }
 
 function pathFor(config, row) {
@@ -340,20 +385,48 @@ async function initManagementPage(root, page, config) {
 
   if (config.reports) {
     panel.hidden = true;
-    table.innerHTML = `<div class="report-grid"><article class="panel"><div class="panel-heading"><div><p class="eyebrow">QUALITY &amp; DELIVERY</p><h2>Supplier performance</h2></div></div><div class="table-wrap" data-supplier-report><div class="loading-state">Loading supplier performance…</div></div></article><article class="panel"><div class="panel-heading"><div><p class="eyebrow">DELIVERY EXPOSURE</p><h2>Overdue purchase orders</h2></div></div><div class="table-wrap" data-overdue-report><div class="loading-state">Loading overdue orders…</div></div></article></div>`;
-    const [supplierResult, overdueResult] = await Promise.allSettled([
-      getData("/api/reports/supplier-performance"), getData("/api/reports/overdue-purchase-orders"),
-    ]);
-    const supplierTarget = table.querySelector("[data-supplier-report]");
-    const overdueTarget = table.querySelector("[data-overdue-report]");
-    if (supplierResult.status === "fulfilled") {
-      const rows = supplierResult.value;
-      supplierTarget.innerHTML = tableMarkup(rows, [["supplier_code", "CODE", true], ["supplier_name", "SUPPLIER"], ["delivery_count", "DELIVERIES"], ["delayed_deliveries", "DELAYED"], ["rejection_rate_percent", "REJECTION %"]], { empty: "No supplier performance records." });
-    } else showError(supplierTarget, supplierResult.reason);
-    if (overdueResult.status === "fulfilled") {
-      overdueTarget.innerHTML = tableMarkup(overdueResult.value, [["po_number", "ORDER", true], ["supplier_name", "SUPPLIER"], ["expected_delivery_date", "EXPECTED", true], ["quantity_outstanding", "OUTSTANDING"], ["status", "STATUS", false, "status"]], { empty: "No overdue purchase orders." });
-    } else showError(overdueTarget, overdueResult.reason);
-    count.textContent = supplierResult.status === "fulfilled" ? `${supplierResult.value.length} SUPPLIERS` : "REPORT UNAVAILABLE";
+    filter.closest("label").hidden = true;
+    table.innerHTML = `<div class="report-grid">
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">QUALITY &amp; DELIVERY</p><h2>Supplier performance</h2></div></div><div class="table-wrap" data-supplier-report><div class="loading-state">Loading supplier performance…</div></div></article>
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">STOCK CONTROL</p><h2>Reorder report</h2></div></div><div class="table-wrap" data-reorder-report><div class="loading-state">Loading reorder report…</div></div></article>
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">DELIVERY EXPOSURE</p><h2>Overdue purchase orders</h2></div></div><div class="table-wrap" data-overdue-report><div class="loading-state">Loading overdue orders…</div></div></article>
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">INVENTORY AUDIT</p><h2>Recent transactions</h2></div></div><div class="table-wrap" data-transaction-report><div class="loading-state">Loading inventory transactions…</div></div></article>
+    </div>`;
+    const reportTargets = [
+      {
+        selector: "[data-supplier-report]",
+        url: "/api/reports/supplier-performance",
+        columns: [["supplier_code", "CODE", true], ["supplier_name", "SUPPLIER"], ["delivery_count", "DELIVERIES"], ["delayed_deliveries", "DELAYED"], ["rejection_rate_percent", "REJECTION %"]],
+        empty: "No supplier performance records.",
+      },
+      {
+        selector: "[data-reorder-report]",
+        url: "/api/inventory/low-stock",
+        columns: [["sku", "SKU", true], ["material_name", "MATERIAL"], ["warehouse_code", "WAREHOUSE", true], ["quantity_on_hand", "ON HAND"], ["reorder_level", "REORDER AT"]],
+        empty: "No reorder alerts.",
+      },
+      {
+        selector: "[data-overdue-report]",
+        url: "/api/reports/overdue-purchase-orders",
+        columns: [["po_number", "ORDER", true], ["supplier_name", "SUPPLIER"], ["expected_delivery_date", "EXPECTED", true], ["quantity_outstanding", "OUTSTANDING"], ["status", "STATUS", false, "status"]],
+        empty: "No overdue purchase orders.",
+      },
+      {
+        selector: "[data-transaction-report]",
+        url: "/api/inventory/transactions",
+        columns: [["occurred_at", "DATE", true], ["sku", "SKU", true], ["warehouse_code", "WAREHOUSE", true], ["transaction_type", "TYPE", false, "status"], ["quantity_delta", "CHANGE"]],
+        empty: "No inventory transactions.",
+      },
+    ];
+    const results = await Promise.allSettled(reportTargets.map(({ url }) => getData(url)));
+    results.forEach((result, index) => {
+      const target = table.querySelector(reportTargets[index].selector);
+      if (result.status === "fulfilled") {
+        target.innerHTML = tableMarkup(result.value, reportTargets[index].columns, { empty: reportTargets[index].empty });
+      } else showError(target, result.reason);
+    });
+    const successfulReports = results.filter((result) => result.status === "fulfilled").length;
+    count.textContent = `${successfulReports} OF ${reportTargets.length} REPORTS AVAILABLE`;
     return;
   }
 
@@ -375,7 +448,7 @@ async function initManagementPage(root, page, config) {
         try {
           const delivery = await getData(`/api/deliveries/${encodeURIComponent(deliverySelect.value)}`);
           const available = (delivery.items || []).filter((item) => item.quality_inspection_id == null);
-          lineSelect.innerHTML = '<option value="">Choose an uninspected line…</option>' + available.map((item) => `<option value="${escapeHtml(item.delivery_item_id)}">${escapeHtml(item.sku)} · ${escapeHtml(item.material_name)} · ${escapeHtml(item.quantity_received)} received</option>`).join("");
+          lineSelect.innerHTML = '<option value="">Choose an uninspected line…</option>' + available.map((item) => `<option value="${escapeHtml(item.delivery_item_id)}" data-received-qty="${escapeHtml(item.quantity_received)}">${escapeHtml(item.sku)} · ${escapeHtml(item.material_name)} · ${escapeHtml(item.quantity_received)} received</option>`).join("");
           lineSelect.disabled = available.length === 0;
           if (!available.length) setFormMessage(message, "Every line on this delivery has already been inspected.");
         } catch (error) {
@@ -385,7 +458,12 @@ async function initManagementPage(root, page, config) {
       });
     }
     if (config.form.lines === "order") {
-      lookup.materials = await getData("/api/materials").catch((error) => { setFormMessage(message, error.message); return []; });
+      try {
+        lookup.materials = await getData("/api/materials");
+      } catch (error) {
+        setFormMessage(message, error.message);
+        lookup.materials = [];
+      }
       addLine(fieldsHolder, "order", lookup.materials);
       fieldsHolder.querySelector("[data-add-line]").addEventListener("click", () => addLine(fieldsHolder, "order", lookup.materials));
     } else if (config.form.lines === "delivery") {
@@ -394,6 +472,7 @@ async function initManagementPage(root, page, config) {
       const shipmentSelect = fieldValue(form, "shipment_id");
       shipmentSelect.addEventListener("change", async () => {
         const orderId = lookup.shipments?.find((row) => String(row.shipment_id) === shipmentSelect.value)?.purchase_order_id;
+        lookup.orderLines = [];
         for (const lineSelect of fieldsHolder.querySelectorAll('[name="line_item"]')) {
           lineSelect.disabled = true;
           lineSelect.innerHTML = '<option value="">Loading purchase-order lines…</option>';
@@ -401,8 +480,12 @@ async function initManagementPage(root, page, config) {
         if (!orderId) return;
         try {
           const order = await getData(`/api/purchase-orders/${encodeURIComponent(orderId)}`);
+          lookup.orderLines = order.items || [];
           for (const lineSelect of fieldsHolder.querySelectorAll('[name="line_item"]')) {
-            lineSelect.innerHTML = '<option value="">Choose a purchase-order line…</option>' + order.items.map((item) => `<option value="${escapeHtml(item.purchase_order_item_id)}">${escapeHtml(item.sku)} · ${escapeHtml(item.material_name)} · ${escapeHtml(item.quantity_ordered)} ordered</option>`).join("");
+            lineSelect.innerHTML = '<option value="">Choose a purchase-order line…</option>' + lookup.orderLines.map((item) => {
+              const remaining = Number(item.quantity_ordered) - Number(item.quantity_received);
+              return `<option value="${escapeHtml(item.purchase_order_item_id)}" ${remaining <= 0 ? "disabled" : ""}>${escapeHtml(item.sku)} · ${escapeHtml(item.material_name)} · ${formatNumber(remaining)} remaining</option>`;
+            }).join("");
             lineSelect.disabled = false;
           }
         } catch (error) {
@@ -440,17 +523,32 @@ async function initManagementPage(root, page, config) {
     table.innerHTML = '<div class="loading-state">Reading the live register…</div>';
     try {
       if (config.inspections) {
-        const deliveries = await getData("/api/deliveries");
-        const settled = await Promise.allSettled(deliveries.map((delivery) => getData(`/api/deliveries/${delivery.delivery_id}/inspections`).then((items) => items.map((item) => ({ ...item, delivery_number: delivery.delivery_number })))));
-        const rows = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-        const failures = settled.filter((result) => result.status === "rejected").length;
+        const rows = await getData("/api/inspections");
         count.textContent = `${rows.length} INSPECTIONS`;
-        if (failures) {
-          table.innerHTML = `<div class="error-state">${failures} delivery inspection list(s) could not be loaded.<small>Refresh after checking the API connection.</small></div>${tableMarkup(rows, [["delivery_number", "DELIVERY", true], ["delivery_item_id", "LINE ID", true], ["accepted_qty", "ACCEPTED"], ["rejected_qty", "REJECTED"], ["inspected_at", "INSPECTED AT", true]])}`;
-        } else table.innerHTML = tableMarkup(rows, [["delivery_number", "DELIVERY", true], ["delivery_item_id", "LINE ID", true], ["accepted_qty", "ACCEPTED"], ["rejected_qty", "REJECTED"], ["inspected_at", "INSPECTED AT", true]], { empty: "No quality inspections recorded." });
+        table.innerHTML = tableMarkup(rows, [["delivery_number", "DELIVERY", true], ["po_number", "PURCHASE ORDER", true], ["sku", "SKU", true], ["material_name", "MATERIAL"], ["quantity_received", "RECEIVED"], ["accepted_qty", "ACCEPTED"], ["rejected_qty", "REJECTED"], ["inspected_at", "INSPECTED AT", true]], { empty: "No quality inspections recorded." });
         return;
       }
-      const loaded = await getData(config.endpoint);
+      let loaded = await getData(config.endpoint);
+      if (config.readOnly) {
+        const [materials, warehouses, reorder] = await Promise.all([
+          getData("/api/materials"), getData("/api/warehouses"), getData("/api/inventory/low-stock"),
+        ]);
+        const materialById = new Map(materials.map((row) => [String(row.material_id), row]));
+        const warehouseById = new Map(warehouses.map((row) => [String(row.warehouse_id), row]));
+        const reorderKeys = new Set(reorder.map((row) => `${row.material_id}/${row.warehouse_id}`));
+        loaded = loaded.map((row) => {
+          const material = materialById.get(String(row.material_id));
+          const warehouse = warehouseById.get(String(row.warehouse_id));
+          return {
+            ...row,
+            sku: material?.sku,
+            material_name: material?.material_name,
+            reorder_level: material?.reorder_level,
+            warehouse_code: warehouse?.warehouse_code,
+            stock_status: reorderKeys.has(`${row.material_id}/${row.warehouse_id}`) ? "Reorder" : "In stock",
+          };
+        });
+      }
       records.splice(0, records.length, ...loaded);
       count.textContent = `${loaded.length} RECORDS`;
       if (config.editable || config.details || config.process) {
@@ -508,23 +606,27 @@ async function initManagementPage(root, page, config) {
         detailRow.className = "detail-row";
         const cell = document.createElement("td");
         cell.colSpan = config.columns.length + 1;
-        cell.innerHTML = `<pre class="inline-detail">${escapeHtml(JSON.stringify(detail, null, 2))}</pre>`;
+        cell.innerHTML = renderRecordDetail(detail);
         detailRow.append(cell);
         button.closest("tr").after(detailRow);
       } else if (action === "process") {
         if (!window.confirm(`Process delivery ${row.delivery_number}? This applies accepted inspection quantities to inventory.`)) return;
-        const response = await fetch(`/api/deliveries/${encodeURIComponent(row.delivery_id)}/process`, { method: "POST", headers: { Accept: "application/json" } });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body?.error?.message || `Request failed (${response.status})`);
-        setFormMessage(message, "Delivery processed. Inventory has been updated from accepted quantities.", true);
+        await window.Api.post(`/api/deliveries/${encodeURIComponent(row.delivery_id)}/process`);
+        const [inventory, orders] = await Promise.allSettled([
+          getData("/api/inventory"),
+          getData("/api/purchase-orders"),
+        ]);
+        const refreshMessage = inventory.status === "fulfilled" && orders.status === "fulfilled"
+          ? `Refreshed ${inventory.value.length} inventory balances and ${orders.value.length} purchase orders.`
+          : [
+            inventory.status === "rejected" ? `Inventory refresh failed: ${inventory.reason.message}` : "",
+            orders.status === "rejected" ? `Purchase-order refresh failed: ${orders.reason.message}` : "",
+          ].filter(Boolean).join(" ");
+        setFormMessage(message, `Delivery processed. ${refreshMessage}`, true);
         await loadRegister();
       } else if (action === "delete") {
         if (!window.confirm(`Delete this ${config.title.toLowerCase()} record?`)) return;
-        const response = await fetch(pathFor(config, row), { method: "DELETE", headers: { Accept: "application/json" } });
-        if (!response.ok && response.status !== 204) {
-          const body = await response.json();
-          throw new Error(body?.error?.message || `Request failed (${response.status})`);
-        }
+        await window.Api.delete(pathFor(config, row));
         setFormMessage(message, "Record deleted.", true);
         await loadRegister();
       } else if (action === "edit") {
@@ -535,7 +637,7 @@ async function initManagementPage(root, page, config) {
             else input.value = row[input.name] ?? "";
           }
         }
-        document.querySelector("[data-submit-label]").textContent = "SAVE CHANGES";
+        document.querySelector("[data-submit-label]").textContent = "Save changes";
         form.querySelector("[data-cancel-edit]").hidden = false;
         setFormMessage(message, `Editing record ${config.keys(row)}.`);
         panel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -550,6 +652,7 @@ async function initManagementPage(root, page, config) {
   if (form) {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (!form.reportValidity()) return;
       setFormMessage(message, "");
       const submit = form.querySelector('[type="submit"]');
       submit.disabled = true;
@@ -561,6 +664,9 @@ async function initManagementPage(root, page, config) {
             quantity_ordered: Number(line.querySelector('[name="line_quantity"]').value),
             unit_cost: line.querySelector('[name="line_cost"]').value,
           }));
+          if (new Set(lines.map((line) => line.material_id)).size !== lines.length) {
+            throw new Error("Choose each material only once per purchase order.");
+          }
           payload = {
             po_number: fieldValue(form, "po_number").value,
             supplier_id: Number(fieldValue(form, "supplier_id").value),
@@ -574,6 +680,16 @@ async function initManagementPage(root, page, config) {
             purchase_order_item_id: Number(line.querySelector('[name="line_item"]').value),
             quantity_received: Number(line.querySelector('[name="line_quantity"]').value),
           }));
+          if (new Set(lines.map((line) => line.purchase_order_item_id)).size !== lines.length) {
+            throw new Error("Choose each purchase-order line only once per delivery.");
+          }
+          for (const line of lines) {
+            const orderLine = lookup.orderLines?.find((item) => Number(item.purchase_order_item_id) === line.purchase_order_item_id);
+            const remaining = orderLine ? Number(orderLine.quantity_ordered) - Number(orderLine.quantity_received) : 0;
+            if (!orderLine || line.quantity_received > remaining) {
+              throw new Error("A received quantity exceeds the remaining amount on its purchase-order line.");
+            }
+          }
           payload = {
             delivery_number: fieldValue(form, "delivery_number").value,
             shipment_id: Number(fieldValue(form, "shipment_id").value),
@@ -582,10 +698,17 @@ async function initManagementPage(root, page, config) {
             items: lines,
           };
         } else if (config.inspections) {
+          const selectedLine = fieldValue(form, "delivery_item_id").selectedOptions[0];
+          const received = Number(selectedLine?.dataset.receivedQty);
+          const accepted = Number(fieldValue(form, "accepted_qty").value);
+          const rejected = Number(fieldValue(form, "rejected_qty").value);
+          if (accepted + rejected !== received) {
+            throw new Error(`Accepted and rejected quantities must total ${formatNumber(received)} received.`);
+          }
           payload = {
             delivery_item_id: Number(fieldValue(form, "delivery_item_id").value),
-            accepted_qty: Number(fieldValue(form, "accepted_qty").value),
-            rejected_qty: Number(fieldValue(form, "rejected_qty").value),
+            accepted_qty: accepted,
+            rejected_qty: rejected,
             inspected_at: fieldValue(form, "inspected_at").value || null,
             notes: fieldValue(form, "notes").value || null,
           };
@@ -595,35 +718,39 @@ async function initManagementPage(root, page, config) {
             const input = fieldValue(form, field.name);
             if (!input) return;
             let value = input.type === "checkbox" ? input.checked : input.value;
-            if (value === "") value = null;
-            if (value === null && !field.required) return;
+            if (value === "" && field.nullable) value = null;
+            if (value === "" && !field.required) return;
             if (["number", "select"].includes(field.type) && value !== null) value = Number(value);
             payload[field.name] = value;
           });
           if (editing) {
-            payload = Object.fromEntries(Object.entries(payload).filter(([key, value]) => config.editable.includes(key) && value !== null));
+            payload = Object.fromEntries(Object.entries(payload).filter(([key]) => config.editable.includes(key)));
           }
         }
         const url = editing ? pathFor(config, editing) : config.endpoint || `/api/deliveries/${encodeURIComponent(fieldValue(form, "delivery_id").value)}/inspections`;
-        const response = await fetch(url, {
-          method: editing ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const body = response.status === 204 ? null : await response.json();
-        if (!response.ok) throw new Error(body?.error?.message || `Request failed (${response.status})`);
+        if (editing) await window.Api.patch(url, payload);
+        else await window.Api.post(url, payload);
         setFormMessage(message, editing ? "Changes saved." : "Record added to the live register.", true);
         if (!editing) form.reset();
         else {
           editing = null;
-          document.querySelector("[data-submit-label]").textContent = "ADD TO REGISTER";
+          document.querySelector("[data-submit-label]").textContent = "Save record";
           form.querySelector("[data-cancel-edit]").hidden = true;
         }
+        if (!editing && config.form.lines === "order") {
+          fieldsHolder.querySelectorAll(".line-item").forEach((line) => line.remove());
+          addLine(fieldsHolder, "order", lookup.materials);
+        }
         if (config.form.lines === "delivery") {
+          if (!editing) {
+            fieldsHolder.querySelectorAll(".line-item").forEach((line) => line.remove());
+            addLine(fieldsHolder, "delivery");
+          }
           fieldsHolder.querySelectorAll('[name="line_item"]').forEach((select) => {
             select.disabled = true;
             select.innerHTML = '<option value="">Choose shipment first…</option>';
           });
+          lookup.orderLines = [];
         }
         if (config.inspections) {
           const lineSelect = fieldValue(form, "delivery_item_id");

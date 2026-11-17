@@ -391,6 +391,25 @@ def create_app():
         )
         return jsonify(data=rows)
 
+    @app.get("/api/inventory/transactions")
+    def inventory_transactions():
+        rows = _database_query(
+            """
+            SELECT it.inventory_transaction_id, it.transaction_type,
+                   it.quantity_delta, it.occurred_at, it.notes,
+                   m.material_id, m.sku, m.material_name,
+                   w.warehouse_id, w.warehouse_code, w.warehouse_name,
+                   d.delivery_id, d.delivery_number
+            FROM inventory_transactions AS it
+            JOIN materials AS m ON m.material_id = it.material_id
+            JOIN warehouses AS w ON w.warehouse_id = it.warehouse_id
+            LEFT JOIN deliveries AS d ON d.delivery_id = it.delivery_id
+            ORDER BY it.occurred_at DESC, it.inventory_transaction_id DESC
+            LIMIT 100
+            """
+        )
+        return jsonify(data=rows)
+
     @app.get("/api/reports/supplier-performance")
     def supplier_performance():
         rows = _database_query(
@@ -426,6 +445,28 @@ def create_app():
                      s.supplier_name, po.ordered_at, po.expected_delivery_date,
                      po.status
             ORDER BY po.expected_delivery_date, po.purchase_order_id
+            """
+        )
+        return jsonify(data=rows)
+
+    @app.get("/api/inspections")
+    def inspections_list_all():
+        rows = _database_query(
+            """
+            SELECT qi.quality_inspection_id, qi.delivery_item_id,
+                   qi.inspected_at, qi.accepted_qty, qi.rejected_qty, qi.notes,
+                   d.delivery_id, d.delivery_number, di.quantity_received,
+                   m.sku, m.material_name, po.po_number
+            FROM quality_inspections AS qi
+            JOIN delivery_items AS di ON di.delivery_item_id = qi.delivery_item_id
+            JOIN deliveries AS d ON d.delivery_id = di.delivery_id
+            JOIN purchase_order_items AS poi
+                ON poi.purchase_order_item_id = di.purchase_order_item_id
+            JOIN materials AS m ON m.material_id = poi.material_id
+            JOIN shipments AS sh ON sh.shipment_id = d.shipment_id
+            JOIN purchase_orders AS po
+                ON po.purchase_order_id = sh.purchase_order_id
+            ORDER BY qi.inspected_at DESC, qi.quality_inspection_id DESC
             """
         )
         return jsonify(data=rows)

@@ -67,21 +67,40 @@ class APITestCase(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn(b"data-page=", response.data)
 
-    def test_theme_stylesheet_exposes_requested_palette(self):
+    def test_theme_stylesheet_uses_light_industrial_palette(self):
         response = self.client.get("/static/css/app.css")
 
         self.assertEqual(response.status_code, 200)
         for color in (
-            b"--color-background: #171813",
-            b"--color-panel: #22231C",
-            b"--color-cream: #E9E0CA",
-            b"--color-accent: #A3B18A",
-            b"--color-amber: #D9A441",
-            b"--color-danger: #D96C5F",
+            b"--color-background: #f5f4ef",
+            b"--color-surface: #ffffff",
+            b"--color-text: #242a29",
+            b"--color-accent: #39766f",
+            b"--color-amber: #a8731c",
+            b"--color-danger: #a44840",
         ):
             with self.subTest(color=color):
                 self.assertIn(color, response.data)
         response.close()
+
+    @patch("app._database_query", return_value=[])
+    def test_inventory_transaction_report_uses_database_records(self, database_query):
+        response = self.client.get("/api/inventory/transactions")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"data": []})
+        self.assertIn("inventory_transactions", database_query.call_args.args[0])
+
+    @patch("app._database_query", return_value=[])
+    def test_quality_inspection_list_includes_receiving_context(self, database_query):
+        response = self.client.get("/api/inspections")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"data": []})
+        query = database_query.call_args.args[0]
+        self.assertIn("quality_inspections", query)
+        self.assertIn("delivery_number", query)
+        self.assertIn("material_name", query)
 
     @patch("app.get_connection")
     def test_health_returns_database_status(self, get_connection):

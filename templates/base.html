@@ -3,54 +3,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#171813">
-  <title>{% block title %}Supply Chain Console{% endblock %} · SC/RIM</title>
+  <meta name="theme-color" content="#f5f4ef">
+  <title>{% block title %}Supply Chain Operations{% endblock %} · SC/RIM</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script src="{{ url_for('static', filename='js/api.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <a class="brand" href="/" aria-label="Supply chain console home">
+      <a class="brand" href="/dashboard" aria-label="Supply Chain Operations home">
         <span class="brand-mark" aria-hidden="true">SC</span>
-        <span class="brand-name">SUPPLY / CHAIN<small>RISK &amp; INVENTORY</small></span>
+        <span class="brand-name">Supply Chain<small>OPERATIONS PLATFORM</small></span>
       </a>
-      <div class="nav-label">OPERATIONS</div>
       <nav class="primary-nav" aria-label="Main navigation">
-        <a href="/" {% if active_page == 'dashboard' %}aria-current="page"{% endif %}><span>▦</span>Dashboard</a>
-        <a href="/inventory" {% if active_page == 'inventory' %}aria-current="page"{% endif %}><span>▤</span>Inventory</a>
-        <a href="/suppliers" {% if active_page == 'suppliers' %}aria-current="page"{% endif %}><span>⌂</span>Suppliers</a>
-        <a href="/materials" {% if active_page == 'materials' %}aria-current="page"{% endif %}><span>◇</span>Materials</a>
-        <a href="/warehouses" {% if active_page == 'warehouses' %}aria-current="page"{% endif %}><span>▥</span>Warehouses</a>
-      </nav>
-      <div class="nav-label">PROCUREMENT &amp; RECEIVING</div>
-      <nav class="primary-nav" aria-label="Procurement navigation">
-        <a href="/purchase-orders" {% if active_page == 'purchase-orders' %}aria-current="page"{% endif %}><span>≡</span>Purchase orders</a>
-        <a href="/shipments" {% if active_page == 'shipments' %}aria-current="page"{% endif %}><span>⇢</span>Shipments</a>
-        <a href="/deliveries" {% if active_page == 'deliveries' %}aria-current="page"{% endif %}><span>⇣</span>Deliveries</a>
-        <a href="/inspections" {% if active_page == 'inspections' %}aria-current="page"{% endif %}><span>✓</span>Quality inspections</a>
-      </nav>
-      <div class="nav-label">ANALYSIS</div>
-      <nav class="primary-nav" aria-label="Analysis navigation">
-        <a href="/risk-reports" {% if active_page == 'risk-reports' %}aria-current="page"{% endif %}><span>⌁</span>Risk reports</a>
+        <span class="nav-label">WORKSPACE</span>
+        <a href="/dashboard" {% if active_page == 'dashboard' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a href="/inventory" {% if active_page == 'inventory' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 12l8 4 8-4M4 17l8 4 8-4M4 7v10M20 7v10"/></svg>
+          Inventory
+        </a>
+        <span class="nav-label">MASTER DATA</span>
+        <a href="/suppliers" {% if active_page == 'suppliers' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M3 20v-1.5a6 6 0 0 1 12 0V20M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14a5 5 0 0 1 3 4.5V20"/></svg>
+          Suppliers
+        </a>
+        <a href="/materials" {% if active_page == 'materials' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>
+          Materials
+        </a>
+        <a href="/warehouses" {% if active_page == 'warehouses' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 9 9-6 9 6v11H3V9Z"/><path d="M8 20v-7h8v7M3 9h18"/></svg>
+          Warehouses
+        </a>
+        <span class="nav-label">PROCUREMENT</span>
+        <a href="/purchase-orders" {% if active_page == 'purchase-orders' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v6h5M9 13h6M9 17h6"/></svg>
+          Purchase orders
+        </a>
+        <a href="/shipments" {% if active_page == 'shipments' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v12H3zM14 10h4l3 3v5h-7z"/><circle cx="7.5" cy="19" r="1.5"/><circle cx="17.5" cy="19" r="1.5"/></svg>
+          Shipments
+        </a>
+        <a href="/deliveries" {% if active_page == 'deliveries' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v13M7 11l5 5 5-5M4 20h16"/></svg>
+          Deliveries
+        </a>
+        <a href="/inspections" {% if active_page == 'inspections' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.3 8 10 4.6-1.7 8-5 8-10V6l-8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+          Quality inspections
+        </a>
+        <span class="nav-label">INSIGHTS</span>
+        <a href="/risk-reports" {% if active_page == 'risk-reports' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h17"/><path d="m7 15 4-4 3 2 6-7"/></svg>
+          Reports &amp; analytics
+        </a>
       </nav>
       <div class="sidebar-foot">
         <span class="live-indicator" aria-hidden="true"></span>
-        <span>LIVE DATA CONNECTION</span>
-        <small>DATABASE / MYSQL</small>
+        <span>DATABASE CONNECTION</span>
+        <small>LIVE API · MYSQL</small>
       </div>
     </aside>
     <div class="main-column">
       <header class="topbar">
-        <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button>
-        <div class="breadcrumb">OPERATIONS <span>/</span> {% block breadcrumb %}DASHBOARD{% endblock %}</div>
-        <div class="topbar-meta"><span class="system-clock" data-clock>--:--:-- UTC</span><span class="system-tag">SYSTEM ONLINE</span></div>
+        <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="breadcrumb"><span>OPERATIONS</span><span aria-hidden="true">/</span>{% block breadcrumb %}OVERVIEW{% endblock %}</div>
+        <div class="topbar-meta"><span class="system-clock" data-clock>--:-- UTC</span><span class="system-tag"><i class="live-indicator"></i> LIVE SYSTEM</span></div>
       </header>
       <main id="main" class="main-content">
         {% block content %}{% endblock %}
       </main>
-      <footer class="site-footer"><span>SC/RIM · SUPPLY CHAIN RISK &amp; INVENTORY MANAGEMENT</span><span>CONTROL CONSOLE <b>01</b></span></footer>
+      <footer class="site-footer"><span>SC/RIM · SUPPLY CHAIN RISK &amp; INVENTORY MANAGEMENT</span><span>OPERATIONS CONSOLE</span></footer>
     </div>
   </div>
 </body>

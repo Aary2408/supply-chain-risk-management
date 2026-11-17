@@ -6,9 +6,9 @@
   <div>
     <p class="eyebrow" data-page-eyebrow>OPERATIONS / REGISTER</p>
     <h1 data-page-title>{{ page|replace('-', ' ')|title }}</h1>
-    <p class="page-intro" data-page-intro>Loading live records from the application API.</p>
+    <p class="page-intro" data-page-intro>Records from the live application database.</p>
   </div>
-  <div class="heading-stamp"><span>LIVE REGISTER</span><strong data-record-count>— RECORDS</strong><small>CONNECTED TO APPLICATION API</small></div>
+  <div class="page-meta"><span class="live-indicator" aria-hidden="true"></span><span data-record-count>Loading records</span></div>
 </section>
 
 <div class="workspace-layout" data-page="{{ page }}">
@@ -17,26 +17,28 @@
       <div><p class="eyebrow">RECORD ENTRY</p><h2 id="form-title" data-form-title>Create record</h2></div>
       <span class="form-required-note">* REQUIRED</span>
     </div>
-    <form data-record-form>
+    <form data-record-form novalidate>
       <div class="form-fields" data-form-fields></div>
       <div class="form-message" data-form-message aria-live="polite"></div>
-      <button class="button button-primary" type="submit"><span data-submit-label>ADD TO REGISTER</span><span aria-hidden="true">→</span></button>
+      <div class="form-actions">
+        <button class="button button-primary" type="submit"><span data-submit-label>Save record</span><span aria-hidden="true">→</span></button>
+      </div>
     </form>
   </section>
 
   <section class="panel register-panel" aria-labelledby="register-title">
     <div class="panel-heading register-heading">
-      <div><p class="eyebrow">CONNECTED RECORDS</p><h2 id="register-title" data-register-title>Current register</h2></div>
-      <label class="filter-control"><span class="sr-only">Filter records</span><span aria-hidden="true">⌕</span><input type="search" data-filter placeholder="Filter register…" autocomplete="off"></label>
+      <div><p class="eyebrow">LIVE DATA</p><h2 id="register-title" data-register-title>Current register</h2></div>
+      <label class="filter-control"><span aria-hidden="true">⌕</span><span class="sr-only">Search records</span><input type="search" data-filter placeholder="Search records…" autocomplete="off"></label>
     </div>
-    <div class="table-wrap" data-record-table aria-live="polite"><div class="loading-state">Reading the live register…</div></div>
+    <div class="table-wrap" data-record-table aria-live="polite"><div class="loading-state">Loading records…</div></div>
   </section>
 
   <section class="panel supplementary-panel" data-supplementary hidden>
     <div class="panel-heading">
       <div><p class="eyebrow" data-supplementary-eyebrow>REPORTING</p><h2 data-supplementary-title>Related report</h2></div>
     </div>
-    <div class="table-wrap" data-supplementary-table><div class="loading-state">Loading related report…</div></div>
+    <div class="table-wrap" data-supplementary-table><div class="loading-state">Loading related data…</div></div>
   </section>
 </div>
 {% endblock %}
